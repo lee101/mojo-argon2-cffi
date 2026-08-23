@@ -1,6 +1,6 @@
 """Argon2d, Argon2i, and Argon2id with BLAKE2b and the RFC 9106 indexing rule."""
 
-from std.algorithm import parallelize
+from std.runtime.asyncrt import TaskGroup
 from std.sys.info import simd_width_of
 
 comptime U8Ptr = UnsafePointer[UInt8, AnyOrigin[mut=True]]
@@ -442,8 +442,8 @@ def argon2_hash(
                 and memory_blocks // (parallelism * 4)
                 >= PARALLEL_SEGMENT_BLOCKS
             ):
-                @parameter
-                def fill_lane(lane: Int):
+                @__parameter
+                async def fill_lane(lane: Int) -> None:
                     fill_segment(
                         memory,
                         scratch + lane * WORK_WORDS,
@@ -457,7 +457,10 @@ def argon2_hash(
                         lane,
                     )
 
-                parallelize[fill_lane](parallelism)
+                var tasks = TaskGroup()
+                for lane in range(parallelism):
+                    tasks.create_task(fill_lane(lane))
+                tasks.wait()
             else:
                 for lane in range(parallelism):
                     fill_segment(
