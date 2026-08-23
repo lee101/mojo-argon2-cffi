@@ -93,18 +93,22 @@ slower.
 
 | case | Mojo | argon2-cffi | upstream / Mojo |
 |---|---:|---:|---:|
-| Argon2id, 64 MiB, t=3, p=4 | 228.07 ms | 208.56 ms | 0.91x |
-| Argon2id, 16 MiB, t=2, p=1 | 47.61 ms | 36.22 ms | 0.76x |
-| Argon2i, 4 MiB, t=3, p=1 | 18.42 ms | 12.69 ms | 0.69x |
+| Argon2id, 64 MiB, t=3, p=4 | 311.77 ms | 109.34 ms | 0.35x |
+| Argon2id, 16 MiB, t=2, p=1 | 30.79 ms | 35.62 ms | 1.16x |
+| Argon2i, 4 MiB, t=3, p=1 | 11.51 ms | 12.21 ms | 1.06x |
 
-On this run, the Mojo implementation is slower than upstream's mature,
-architecture-specific C implementation in all three cases.
+On this run, Mojo is faster for both single-lane cases. The 64 MiB four-lane
+case remains slower than upstream's mature, architecture-specific C
+implementation and is limited by random-reference traffic beyond the shared
+cache.
 
-The block XOR, copy, final-lane reduction, and secure-wipe passes use native
-SIMD-width loads and stores with scalar tails. Lane filling uses `parallelize`
-only when there is more than one lane and each slice contains at least 256
-blocks. Each active lane gets independent scratch storage; serial calls reuse
-one scratch arena.
+The four independent BLAMKA permutations in each compression round execute in
+four-wide UInt64 SIMD registers. Block XOR, copy, final-lane reduction, and
+secure-wipe passes use native SIMD-width loads and stores with scalar tails.
+Lane filling uses `parallelize` only when there is more than one lane and each
+slice contains at least 256 blocks. The mandatory memory wipe is parallel only
+for matrices of at least 32 MiB. Each active lane gets independent scratch
+storage; serial calls reuse one scratch arena.
 
 No GPU path is included. Argon2's hot block filler is intentionally
 memory-hard, uses data-dependent random references, and has well under two

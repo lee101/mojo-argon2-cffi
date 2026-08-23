@@ -1,6 +1,7 @@
 """Argon2d, Argon2i, and Argon2id with BLAKE2b and the RFC 9106 indexing rule."""
 
-from std.runtime.asyncrt import TaskGroup
+from max.algorithm import parallelize
+from std.runtime import initialize_runtime
 from std.sys.info import simd_width_of
 
 comptime U8Ptr = UnsafePointer[UInt8, AnyOrigin[mut=True]]
@@ -17,6 +18,7 @@ comptime SEED_OFF = 832
 comptime DIGEST_OFF = 848
 comptime WORK_WORDS = 1024
 comptime PARALLEL_SEGMENT_BLOCKS = 256
+comptime PARALLEL_WIPE_BLOCKS = 32768
 
 
 def rotr(x: UInt64, n: Int) -> UInt64:
@@ -169,6 +171,18 @@ def blamka(x: UInt64, y: UInt64) -> UInt64:
     return x + y + UInt64(2) * low_x * low_y
 
 
+def blamka4(
+    x: SIMD[DType.uint64, 4], y: SIMD[DType.uint64, 4]
+) -> SIMD[DType.uint64, 4]:
+    var low_x = x & UInt64(0xFFFFFFFF)
+    var low_y = y & UInt64(0xFFFFFFFF)
+    return x + y + UInt64(2) * low_x * low_y
+
+
+def rotr4(x: SIMD[DType.uint64, 4], n: Int) -> SIMD[DType.uint64, 4]:
+    return (x >> UInt64(n)) | (x << UInt64(64 - n))
+
+
 def blamka_g(block: U64Ptr, a: Int, b: Int, c: Int, d: Int):
     block[a] = blamka(block[a], block[b])
     block[d] = rotr(block[d] ^ block[a], 32)
@@ -199,14 +213,63 @@ def round16(
     x14: Int,
     x15: Int,
 ):
-    blamka_g(block, x0, x4, x8, x12)
-    blamka_g(block, x1, x5, x9, x13)
-    blamka_g(block, x2, x6, x10, x14)
-    blamka_g(block, x3, x7, x11, x15)
-    blamka_g(block, x0, x5, x10, x15)
-    blamka_g(block, x1, x6, x11, x12)
-    blamka_g(block, x2, x7, x8, x13)
-    blamka_g(block, x3, x4, x9, x14)
+    comptime W = simd_width_of[DType.float64]()
+    comptime if W >= 4:
+        var a = SIMD[DType.uint64, 4](
+            block[x0], block[x1], block[x2], block[x3]
+        )
+        var b = SIMD[DType.uint64, 4](
+            block[x4], block[x5], block[x6], block[x7]
+        )
+        var c = SIMD[DType.uint64, 4](
+            block[x8], block[x9], block[x10], block[x11]
+        )
+        var d = SIMD[DType.uint64, 4](
+            block[x12], block[x13], block[x14], block[x15]
+        )
+        a = blamka4(a, b)
+        d = rotr4(d ^ a, 32)
+        c = blamka4(c, d)
+        b = rotr4(b ^ c, 24)
+        a = blamka4(a, b)
+        d = rotr4(d ^ a, 16)
+        c = blamka4(c, d)
+        b = rotr4(b ^ c, 63)
+        b = b.shuffle[1, 2, 3, 0]()
+        c = c.shuffle[2, 3, 0, 1]()
+        d = d.shuffle[3, 0, 1, 2]()
+        a = blamka4(a, b)
+        d = rotr4(d ^ a, 32)
+        c = blamka4(c, d)
+        b = rotr4(b ^ c, 24)
+        a = blamka4(a, b)
+        d = rotr4(d ^ a, 16)
+        c = blamka4(c, d)
+        b = rotr4(b ^ c, 63)
+        b = b.shuffle[3, 0, 1, 2]()
+        c = c.shuffle[2, 3, 0, 1]()
+        d = d.shuffle[1, 2, 3, 0]()
+        block[x0], block[x1], block[x2], block[x3] = (
+            a[0], a[1], a[2], a[3]
+        )
+        block[x4], block[x5], block[x6], block[x7] = (
+            b[0], b[1], b[2], b[3]
+        )
+        block[x8], block[x9], block[x10], block[x11] = (
+            c[0], c[1], c[2], c[3]
+        )
+        block[x12], block[x13], block[x14], block[x15] = (
+            d[0], d[1], d[2], d[3]
+        )
+    else:
+        blamka_g(block, x0, x4, x8, x12)
+        blamka_g(block, x1, x5, x9, x13)
+        blamka_g(block, x2, x6, x10, x14)
+        blamka_g(block, x3, x7, x11, x15)
+        blamka_g(block, x0, x5, x10, x15)
+        blamka_g(block, x1, x6, x11, x12)
+        blamka_g(block, x2, x7, x8, x13)
+        blamka_g(block, x3, x4, x9, x14)
 
 
 def fill_block(
@@ -413,6 +476,8 @@ def argon2_hash(
     version: Int,
     use_threads: Bool,
 ):
+    if use_threads:
+        initialize_runtime()
     var memory_blocks = 4 * parallelism * (
         memory_cost // (4 * parallelism)
     )
@@ -443,7 +508,18 @@ def argon2_hash(
                 >= PARALLEL_SEGMENT_BLOCKS
             ):
                 @__parameter
-                async def fill_lane(lane: Int) -> None:
+                @__copy_capture(
+                    memory,
+                    scratch,
+                    memory_blocks,
+                    time_cost,
+                    parallelism,
+                    type_id,
+                    version,
+                    pass_number,
+                    slice_number,
+                )
+                def fill_lane(lane: Int):
                     fill_segment(
                         memory,
                         scratch + lane * WORK_WORDS,
@@ -457,10 +533,7 @@ def argon2_hash(
                         lane,
                     )
 
-                var tasks = TaskGroup()
-                for lane in range(parallelism):
-                    tasks.create_task(fill_lane(lane))
-                tasks.wait()
+                parallelize[fill_lane](parallelism, parallelism)
             else:
                 for lane in range(parallelism):
                     fill_segment(
@@ -508,13 +581,31 @@ def argon2_hash(
     )
     var zeroes = SIMD[DType.uint64, W](0)
     var memory_words = memory_blocks * 128
-    word = 0
-    while word + W <= memory_words:
-        memory.store(word, zeroes)
-        word += W
-    while word < memory_words:
-        memory[word] = UInt64(0)
-        word += 1
+    if use_threads and memory_blocks >= PARALLEL_WIPE_BLOCKS:
+        @__parameter
+        @__copy_capture(memory, memory_words, parallelism)
+        def wipe_lane(lane: Int):
+            comptime WIPE_W = simd_width_of[DType.float64]()
+            var lane_words = memory_words // parallelism
+            var start = lane * lane_words
+            var stop = start + lane_words
+            var wipe_zeroes = SIMD[DType.uint64, WIPE_W](0)
+            while start + WIPE_W <= stop:
+                memory.store(start, wipe_zeroes)
+                start += WIPE_W
+            while start < stop:
+                memory[start] = UInt64(0)
+                start += 1
+
+        parallelize[wipe_lane](parallelism, parallelism)
+    else:
+        word = 0
+        while word + W <= memory_words:
+            memory.store(word, zeroes)
+            word += W
+        while word < memory_words:
+            memory[word] = UInt64(0)
+            word += 1
     word = 0
     var work_words = WORK_WORDS
     if use_threads:

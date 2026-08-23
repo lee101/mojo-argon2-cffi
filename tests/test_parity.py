@@ -110,6 +110,21 @@ def test_parallel_runtime_failure_falls_back(monkeypatch):
     )
 
 
+@pytest.mark.parametrize("memory_cost", [32_760, 32_768])
+def test_parallel_wipe_threshold_parity(memory_cost):
+    kwargs = dict(
+        secret=b"parallel wipe threshold",
+        salt=b"0123456789abcdef",
+        time_cost=1,
+        memory_cost=memory_cost,
+        parallelism=2,
+        hash_len=32,
+    )
+    assert mojo_ll.hash_secret_raw(type=mojo.Type.ID, **kwargs) == (
+        upstream_ll.hash_secret_raw(type=upstream.Type.ID, **kwargs)
+    )
+
+
 def test_simd_copy_tail_parity():
     kwargs = dict(
         secret=b"simd tail",

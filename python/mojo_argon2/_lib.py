@@ -79,22 +79,26 @@ def hash_raw(
     type_id: int,
     version: int,
 ) -> bytes:
-    initial = bytearray(
-        struct.pack(
-            "<7I",
-            parallelism,
-            hash_len,
-            memory_cost,
-            time_cost,
-            version,
-            type_id,
-            len(secret),
-        )
-        + secret
-        + struct.pack("<I", len(salt))
-        + salt
-        + struct.pack("<II", 0, 0)
+    initial = bytearray(40 + len(secret) + len(salt))
+    struct.pack_into(
+        "<7I",
+        initial,
+        0,
+        parallelism,
+        hash_len,
+        memory_cost,
+        time_cost,
+        version,
+        type_id,
+        len(secret),
     )
+    offset = 28
+    initial[offset : offset + len(secret)] = secret
+    offset += len(secret)
+    struct.pack_into("<I", initial, offset, len(salt))
+    offset += 4
+    initial[offset : offset + len(salt)] = salt
+    struct.pack_into("<II", initial, offset + len(salt), 0, 0)
     initial_buf = np.frombuffer(initial, dtype=np.uint8)
     try:
         memory_blocks = 4 * parallelism * (memory_cost // (4 * parallelism))
