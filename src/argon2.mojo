@@ -1,7 +1,5 @@
 """Argon2d, Argon2i, and Argon2id with BLAKE2b and the RFC 9106 indexing rule."""
 
-from max.algorithm import parallelize
-from std.runtime import initialize_runtime
 from std.sys.info import simd_width_of
 
 comptime U8Ptr = UnsafePointer[UInt8, AnyOrigin[mut=True]]
@@ -17,8 +15,6 @@ comptime BLAKE_OFF = 768
 comptime SEED_OFF = 832
 comptime DIGEST_OFF = 848
 comptime WORK_WORDS = 1024
-comptime PARALLEL_SEGMENT_BLOCKS = 256
-comptime PARALLEL_WIPE_BLOCKS = 32768
 
 
 def rotr(x: UInt64, n: Int) -> UInt64:
@@ -459,28 +455,16 @@ def fill_segment(
         )
 
 
-def argon2_hash(
+def argon2_begin(
     initial: U8Ptr,
     initial_len: Int,
-    memory: U64Ptr,
     memory_bytes: U8Ptr,
+    memory_blocks: Int,
     scratch: U64Ptr,
     scratch_bytes: U8Ptr,
-    dst: U8Ptr,
     sigma: U8Ptr,
-    time_cost: Int,
-    memory_cost: Int,
     parallelism: Int,
-    hash_len: Int,
-    type_id: Int,
-    version: Int,
-    use_threads: Bool,
 ):
-    if use_threads:
-        initialize_runtime()
-    var memory_blocks = 4 * parallelism * (
-        memory_cost // (4 * parallelism)
-    )
     var lane_length = memory_blocks // parallelism
     var seed = scratch_bytes + SEED_OFF * 8
     var digest = scratch_bytes + DIGEST_OFF * 8
@@ -498,57 +482,47 @@ def argon2_hash(
             1024, digest, sigma, scratch,
         )
 
-    for pass_number in range(time_cost):
-        for slice_number in range(4):
-            if (
-                use_threads
-                and
-                parallelism > 1
-                and memory_blocks // (parallelism * 4)
-                >= PARALLEL_SEGMENT_BLOCKS
-            ):
-                @__parameter
-                @__copy_capture(
-                    memory,
-                    scratch,
-                    memory_blocks,
-                    time_cost,
-                    parallelism,
-                    type_id,
-                    version,
-                    pass_number,
-                    slice_number,
-                )
-                def fill_lane(lane: Int):
-                    fill_segment(
-                        memory,
-                        scratch + lane * WORK_WORDS,
-                        memory_blocks,
-                        time_cost,
-                        parallelism,
-                        type_id,
-                        version,
-                        pass_number,
-                        slice_number,
-                        lane,
-                    )
 
-                parallelize[fill_lane](parallelism, parallelism)
-            else:
-                for lane in range(parallelism):
-                    fill_segment(
-                        memory,
-                        scratch,
-                        memory_blocks,
-                        time_cost,
-                        parallelism,
-                        type_id,
-                        version,
-                        pass_number,
-                        slice_number,
-                        lane,
-                    )
+def argon2_fill_lane(
+    memory: U64Ptr,
+    scratch: U64Ptr,
+    memory_blocks: Int,
+    time_cost: Int,
+    parallelism: Int,
+    type_id: Int,
+    version: Int,
+    pass_number: Int,
+    slice_number: Int,
+    lane: Int,
+    lane_stride: Int,
+):
+    fill_segment(
+        memory,
+        scratch + lane * lane_stride,
+        memory_blocks,
+        time_cost,
+        parallelism,
+        type_id,
+        version,
+        pass_number,
+        slice_number,
+        lane,
+    )
 
+
+def argon2_finish(
+    memory: U64Ptr,
+    memory_blocks: Int,
+    scratch: U64Ptr,
+    scratch_bytes: U8Ptr,
+    dst: U8Ptr,
+    sigma: U8Ptr,
+    parallelism: Int,
+    hash_len: Int,
+    work_words: Int,
+):
+    var lane_length = memory_blocks // parallelism
+    var digest = scratch_bytes + DIGEST_OFF * 8
     var final_block = scratch + FINAL_OFF
     var last = lane_length - 1
     comptime W = simd_width_of[DType.float64]()
@@ -581,41 +555,80 @@ def argon2_hash(
     )
     var zeroes = SIMD[DType.uint64, W](0)
     var memory_words = memory_blocks * 128
-    if use_threads and memory_blocks >= PARALLEL_WIPE_BLOCKS:
-        @__parameter
-        @__copy_capture(memory, memory_words, parallelism)
-        def wipe_lane(lane: Int):
-            comptime WIPE_W = simd_width_of[DType.float64]()
-            var lane_words = memory_words // parallelism
-            var start = lane * lane_words
-            var stop = start + lane_words
-            var wipe_zeroes = SIMD[DType.uint64, WIPE_W](0)
-            while start + WIPE_W <= stop:
-                memory.store(start, wipe_zeroes)
-                start += WIPE_W
-            while start < stop:
-                memory[start] = UInt64(0)
-                start += 1
-
-        parallelize[wipe_lane](parallelism, parallelism)
-    else:
-        word = 0
-        while word + W <= memory_words:
-            memory.store(word, zeroes)
-            word += W
-        while word < memory_words:
-            memory[word] = UInt64(0)
-            word += 1
     word = 0
-    var work_words = WORK_WORDS
-    if use_threads:
-        work_words *= parallelism
+    while word + W <= memory_words:
+        memory.store(word, zeroes)
+        word += W
+    while word < memory_words:
+        memory[word] = UInt64(0)
+        word += 1
+    word = 0
     while word + W <= work_words:
         scratch.store(word, zeroes)
         word += W
     while word < work_words:
         scratch[word] = UInt64(0)
         word += 1
+
+
+def argon2_hash(
+    initial: U8Ptr,
+    initial_len: Int,
+    memory: U64Ptr,
+    memory_bytes: U8Ptr,
+    scratch: U64Ptr,
+    scratch_bytes: U8Ptr,
+    dst: U8Ptr,
+    sigma: U8Ptr,
+    time_cost: Int,
+    memory_cost: Int,
+    parallelism: Int,
+    hash_len: Int,
+    type_id: Int,
+    version: Int,
+    lane_stride: Int,
+    work_words: Int,
+):
+    var memory_blocks = 4 * parallelism * (
+        memory_cost // (4 * parallelism)
+    )
+    argon2_begin(
+        initial,
+        initial_len,
+        memory_bytes,
+        memory_blocks,
+        scratch,
+        scratch_bytes,
+        sigma,
+        parallelism,
+    )
+    for pass_number in range(time_cost):
+        for slice_number in range(4):
+            for lane in range(parallelism):
+                argon2_fill_lane(
+                    memory,
+                    scratch,
+                    memory_blocks,
+                    time_cost,
+                    parallelism,
+                    type_id,
+                    version,
+                    pass_number,
+                    slice_number,
+                    lane,
+                    lane_stride,
+                )
+    argon2_finish(
+        memory,
+        memory_blocks,
+        scratch,
+        scratch_bytes,
+        dst,
+        sigma,
+        parallelism,
+        hash_len,
+        work_words,
+    )
 
 
 @export("mojo_argon2_hash")
@@ -663,8 +676,10 @@ def mojo_argon2_hash(
         memory_cost // (4 * parallelism)
     )
     var required_work_words = WORK_WORDS
+    var lane_stride = 0
     if use_threads != 0:
         required_work_words *= parallelism
+        lane_stride = WORK_WORDS
     if (
         memory_words < memory_blocks * 128
         or work_words < required_work_words
@@ -694,6 +709,122 @@ def mojo_argon2_hash(
         hash_len,
         type_id,
         version,
-        use_threads != 0,
+        lane_stride,
+        required_work_words,
+    )
+    return 0
+
+
+@export("mojo_argon2_begin")
+def mojo_argon2_begin(
+    initial_addr: Int,
+    initial_len: Int,
+    memory_addr: Int,
+    memory_blocks: Int,
+    work_addr: Int,
+    sigma_addr: Int,
+    parallelism: Int,
+) abi("C") -> Int:
+    if (
+        initial_addr == 0
+        or initial_len < 48
+        or memory_addr == 0
+        or work_addr == 0
+        or sigma_addr == 0
+        or parallelism < 1
+        or memory_blocks < 4 * parallelism
+    ):
+        return -1
+    argon2_begin(
+        U8Ptr(unsafe_from_address=initial_addr),
+        initial_len,
+        U8Ptr(unsafe_from_address=memory_addr),
+        memory_blocks,
+        U64Ptr(unsafe_from_address=work_addr),
+        U8Ptr(unsafe_from_address=work_addr),
+        U8Ptr(unsafe_from_address=sigma_addr),
+        parallelism,
+    )
+    return 0
+
+
+@export("mojo_argon2_fill")
+def mojo_argon2_fill(
+    memory_addr: Int,
+    work_addr: Int,
+    memory_blocks: Int,
+    time_cost: Int,
+    parallelism: Int,
+    type_id: Int,
+    version: Int,
+    pass_number: Int,
+    slice_number: Int,
+    lane: Int,
+    lane_stride: Int,
+) abi("C") -> Int:
+    if (
+        memory_addr == 0
+        or work_addr == 0
+        or parallelism < 1
+        or memory_blocks < 4 * parallelism
+        or time_cost < 1
+        or lane < 0
+        or lane >= parallelism
+        or pass_number < 0
+        or slice_number < 0
+        or slice_number > 3
+        or type_id < 0
+        or type_id > 2
+        or (version != 16 and version != 19)
+    ):
+        return -1
+    argon2_fill_lane(
+        U64Ptr(unsafe_from_address=memory_addr),
+        U64Ptr(unsafe_from_address=work_addr),
+        memory_blocks,
+        time_cost,
+        parallelism,
+        type_id,
+        version,
+        pass_number,
+        slice_number,
+        lane,
+        lane_stride,
+    )
+    return 0
+
+
+@export("mojo_argon2_finish")
+def mojo_argon2_finish(
+    memory_addr: Int,
+    memory_blocks: Int,
+    work_addr: Int,
+    dst_addr: Int,
+    hash_len: Int,
+    sigma_addr: Int,
+    parallelism: Int,
+    work_words: Int,
+) abi("C") -> Int:
+    if (
+        memory_addr == 0
+        or work_addr == 0
+        or dst_addr == 0
+        or sigma_addr == 0
+        or parallelism < 1
+        or memory_blocks < 4 * parallelism
+        or hash_len < 4
+        or work_words < WORK_WORDS
+    ):
+        return -1
+    argon2_finish(
+        U64Ptr(unsafe_from_address=memory_addr),
+        memory_blocks,
+        U64Ptr(unsafe_from_address=work_addr),
+        U8Ptr(unsafe_from_address=work_addr),
+        U8Ptr(unsafe_from_address=dst_addr),
+        U8Ptr(unsafe_from_address=sigma_addr),
+        parallelism,
+        hash_len,
+        work_words,
     )
     return 0

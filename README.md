@@ -105,10 +105,14 @@ cache.
 The four independent BLAMKA permutations in each compression round execute in
 four-wide UInt64 SIMD registers. Block XOR, copy, final-lane reduction, and
 secure-wipe passes use native SIMD-width loads and stores with scalar tails.
-Lane filling uses `parallelize` only when there is more than one lane and each
-slice contains at least 256 blocks. The mandatory memory wipe is parallel only
-for matrices of at least 32 MiB. Each active lane gets independent scratch
-storage; serial calls reuse one scratch arena.
+Lane filling fans out across Python worker threads when there is more than one
+lane, each slice contains at least 256 blocks, and the whole hash is at least
+`MIN_PARALLEL_BLOCKS` (2^19) blocks; below that a single-call kernel is
+measured faster than building the pool. Pass/slice rounds still drain in
+order, as RFC 9106 requires; only the lanes inside a round run concurrently.
+The mandatory memory wipe is a pure bandwidth pass and always runs on the
+calling thread. Each active lane gets independent scratch storage; serial calls
+reuse one scratch arena.
 
 No GPU path is included. Argon2's hot block filler is intentionally
 memory-hard, uses data-dependent random references, and has well under two

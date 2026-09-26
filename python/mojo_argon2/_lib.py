@@ -5,9 +5,18 @@ from __future__ import annotations
 import ctypes
 import os
 import struct
-import sys
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
+
+
+WORK_WORDS = 1024
+SEGMENT_BLOCKS_THRESHOLD = 256
+# Measured on this box: the lane fan-out only repays the pool once the fill
+# runs to several hundred thousand blocks.  Below that it is 0.8-0.9x, so the
+# default keeps small hashes on the single-call kernel.
+MIN_PARALLEL_BLOCKS = 1 << 19
+MAX_LANE_WORKERS = 16
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -34,8 +43,13 @@ _SIGMA = np.array(
 )
 
 _lib: ctypes.CDLL | None = None
-_runtime: ctypes.CDLL | None = None
-_runtime_ready = False
+
+_PHASE_ARITY = {
+    "mojo_argon2_hash": 17,
+    "mojo_argon2_begin": 7,
+    "mojo_argon2_fill": 11,
+    "mojo_argon2_finish": 8,
+}
 
 
 def lib() -> ctypes.CDLL:
@@ -44,29 +58,46 @@ def lib() -> ctypes.CDLL:
         if not os.path.exists(LIB):
             raise RuntimeError("compiled library missing; run `pixi run build`")
         _lib = ctypes.CDLL(LIB)
-        fn = _lib.mojo_argon2_hash
-        fn.argtypes = [ctypes.c_int64] * 17
-        fn.restype = ctypes.c_int64
+        for name, arity in _PHASE_ARITY.items():
+            entry = getattr(_lib, name)
+            entry.argtypes = [ctypes.c_int64] * arity
+            entry.restype = ctypes.c_int64
     return _lib
 
 
-def _ensure_parallel_runtime() -> bool:
-    global _runtime, _runtime_ready
-    if _runtime_ready:
-        return True
-    try:
-        runtime_path = os.path.join(
-            sys.prefix, "lib", "libKGENCompilerRTShared.so"
-        )
-        _runtime = ctypes.CDLL(runtime_path)
-        initialize = _runtime.KGEN_CompilerRT_AsyncRT_GetOrCreateCPUDevice
-        initialize.argtypes = []
-        initialize.restype = ctypes.c_void_p
-        _runtime_ready = bool(initialize())
-    except (AttributeError, OSError):
-        _runtime = None
-        _runtime_ready = False
-    return _runtime_ready
+def _fill_lane(part):
+    (
+        memory_addr,
+        work_addr,
+        memory_blocks,
+        time_cost,
+        parallelism,
+        type_id,
+        version,
+        pass_number,
+        slice_number,
+        lane,
+    ) = part
+    rv = lib().mojo_argon2_fill(
+        memory_addr,
+        work_addr,
+        memory_blocks,
+        time_cost,
+        parallelism,
+        type_id,
+        version,
+        pass_number,
+        slice_number,
+        lane,
+        WORK_WORDS,
+    )
+    if rv != 0:
+        raise RuntimeError(f"Mojo Argon2 lane fill returned error {rv}")
+
+
+def _check(rv, what):
+    if rv != 0:
+        raise RuntimeError(f"Mojo Argon2 {what} returned error {rv}")
 
 
 def hash_raw(
@@ -104,35 +135,88 @@ def hash_raw(
         memory_blocks = 4 * parallelism * (memory_cost // (4 * parallelism))
         memory = np.empty(memory_blocks * 128, dtype=np.uint64)
         segment_blocks = memory_blocks // (parallelism * 4)
-        use_threads = (
+        threaded = (
             parallelism > 1
-            and segment_blocks >= 256
-            and _ensure_parallel_runtime()
+            and segment_blocks >= SEGMENT_BLOCKS_THRESHOLD
+            and memory_blocks * time_cost >= MIN_PARALLEL_BLOCKS
         )
-        work_words = 1024 * parallelism if use_threads else 1024
+        work_words = WORK_WORDS * parallelism if threaded else WORK_WORDS
         work = np.empty(work_words, dtype=np.uint64)
         result = np.empty(hash_len, dtype=np.uint8)
-        rv = lib().mojo_argon2_hash(
-            initial_buf.ctypes.data,
-            initial_buf.size,
-            memory.ctypes.data,
-            memory.size,
-            work.ctypes.data,
-            work.size,
-            result.ctypes.data,
-            result.size,
-            _SIGMA.ctypes.data,
-            _SIGMA.size,
-            time_cost,
-            memory_cost,
-            parallelism,
-            hash_len,
-            type_id,
-            version,
-            use_threads,
+        if not threaded:
+            _check(
+                lib().mojo_argon2_hash(
+                    initial_buf.ctypes.data,
+                    initial_buf.size,
+                    memory.ctypes.data,
+                    memory.size,
+                    work.ctypes.data,
+                    work.size,
+                    result.ctypes.data,
+                    result.size,
+                    _SIGMA.ctypes.data,
+                    _SIGMA.size,
+                    time_cost,
+                    memory_cost,
+                    parallelism,
+                    hash_len,
+                    type_id,
+                    version,
+                    0,
+                ),
+                "kernel",
+            )
+            return result.tobytes()
+        _check(
+            lib().mojo_argon2_begin(
+                initial_buf.ctypes.data,
+                initial_buf.size,
+                memory.ctypes.data,
+                memory_blocks,
+                work.ctypes.data,
+                _SIGMA.ctypes.data,
+                parallelism,
+            ),
+            "begin",
         )
-        if rv != 0:
-            raise RuntimeError(f"Mojo Argon2 kernel returned error {rv}")
+        # RFC 9106 fills a pass slice by slice and a pass reads the previous
+        # pass, so the rounds must drain in order; only the lanes inside a
+        # (pass, slice) round are independent.
+        with ThreadPoolExecutor(
+            max_workers=min(parallelism, MAX_LANE_WORKERS)
+        ) as pool:
+            for pass_number in range(time_cost):
+                for slice_number in range(4):
+                    parts = [
+                        (
+                            memory.ctypes.data,
+                            work.ctypes.data,
+                            memory_blocks,
+                            time_cost,
+                            parallelism,
+                            type_id,
+                            version,
+                            pass_number,
+                            slice_number,
+                            lane,
+                        )
+                        for lane in range(parallelism)
+                    ]
+                    for _ in pool.map(_fill_lane, parts):
+                        pass
+        _check(
+            lib().mojo_argon2_finish(
+                memory.ctypes.data,
+                memory_blocks,
+                work.ctypes.data,
+                result.ctypes.data,
+                hash_len,
+                _SIGMA.ctypes.data,
+                parallelism,
+                work.size,
+            ),
+            "finish",
+        )
         return result.tobytes()
     finally:
         initial_buf.fill(0)

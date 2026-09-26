@@ -93,21 +93,39 @@ def test_parallel_threshold_parity(memory_cost):
     )
 
 
-def test_parallel_runtime_failure_falls_back(monkeypatch):
-    monkeypatch.setattr(
-        mojo_bridge, "_ensure_parallel_runtime", lambda: False
-    )
+@pytest.mark.parametrize(
+    ("memory_cost", "parallelism", "min_blocks", "expected_workers"),
+    [
+        (4_096, 4, 0, 4),
+        (4_096, 4, 1 << 40, None),
+        (2_040, 2, 0, None),
+    ],
+)
+def test_lane_fan_out_policy(
+    monkeypatch, memory_cost, parallelism, min_blocks, expected_workers
+):
+    seen = []
+    real = mojo_bridge.ThreadPoolExecutor
+
+    class Recording(real):
+        def __init__(self, *args, **kwargs):
+            seen.append(kwargs.get("max_workers"))
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(mojo_bridge, "ThreadPoolExecutor", Recording)
+    monkeypatch.setattr(mojo_bridge, "MIN_PARALLEL_BLOCKS", min_blocks)
     kwargs = dict(
-        secret=b"runtime fallback",
+        secret=b"lane fanout",
         salt=b"0123456789abcdef",
-        time_cost=1,
-        memory_cost=2_048,
-        parallelism=2,
+        time_cost=2,
+        memory_cost=memory_cost,
+        parallelism=parallelism,
         hash_len=32,
     )
     assert mojo_ll.hash_secret_raw(type=mojo.Type.ID, **kwargs) == (
         upstream_ll.hash_secret_raw(type=upstream.Type.ID, **kwargs)
     )
+    assert seen == ([] if expected_workers is None else [expected_workers])
 
 
 @pytest.mark.parametrize("memory_cost", [32_760, 32_768])
