@@ -93,9 +93,9 @@ slower.
 
 | case | Mojo | argon2-cffi | upstream / Mojo |
 |---|---:|---:|---:|
-| Argon2id, 64 MiB, t=3, p=4 | 311.77 ms | 109.34 ms | 0.35x |
-| Argon2id, 16 MiB, t=2, p=1 | 30.79 ms | 35.62 ms | 1.16x |
-| Argon2i, 4 MiB, t=3, p=1 | 11.51 ms | 12.21 ms | 1.06x |
+| Argon2id, 64 MiB, t=3, p=4 | 200.79 ms | 94.67 ms | 0.47x |
+| Argon2id, 16 MiB, t=2, p=1 | 24.94 ms | 28.14 ms | 1.13x |
+| Argon2i, 4 MiB, t=3, p=1 | 8.69 ms | 9.58 ms | 1.10x |
 
 On this run, Mojo is faster for both single-lane cases. The 64 MiB four-lane
 case remains slower than upstream's mature, architecture-specific C
@@ -148,8 +148,8 @@ unchanged because this phase produced no code change:
 | Argon2id, 16 MiB, t=2, p=1 | 23.71 ms | 23.71 ms |
 | Argon2i, 4 MiB, t=3, p=1 | 8.73 ms | 8.73 ms |
 
-The README benchmark table above reports a slower run of the same port
-(311.77 ms / 30.79 ms / 11.51 ms) and is left as measured.
+The README benchmark table above now reports the measured run from this
+verification session (200.79 ms / 24.94 ms / 8.69 ms).
 
 ## How it works
 
