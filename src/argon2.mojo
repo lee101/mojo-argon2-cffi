@@ -124,7 +124,7 @@ def copy_bytes(src: U8Ptr, dst: U8Ptr, n: Int):
     comptime W = simd_width_of[DType.float64]()
     var i = 0
     while i + W <= n:
-        dst.store(i, src.load[width=W](i))
+        dst.store(i, src.unsafe_load[width=W](i))
         i += W
     while i < n:
         dst[i] = src[i]
@@ -282,17 +282,17 @@ def fill_block(
     if with_xor:
         while word + W <= 128:
             var mixed = (
-                prev.load[width=W](word)
-                ^ reference.load[width=W](word)
+                prev.unsafe_load[width=W](word)
+                ^ reference.unsafe_load[width=W](word)
             )
             r.store(word, mixed)
-            tmp.store(word, mixed ^ next.load[width=W](word))
+            tmp.store(word, mixed ^ next.unsafe_load[width=W](word))
             word += W
     else:
         while word + W <= 128:
             var mixed = (
-                prev.load[width=W](word)
-                ^ reference.load[width=W](word)
+                prev.unsafe_load[width=W](word)
+                ^ reference.unsafe_load[width=W](word)
             )
             r.store(word, mixed)
             tmp.store(word, mixed)
@@ -321,7 +321,7 @@ def fill_block(
     while word + W <= 128:
         next.store(
             word,
-            tmp.load[width=W](word) ^ r.load[width=W](word),
+            tmp.unsafe_load[width=W](word) ^ r.unsafe_load[width=W](word),
         )
         word += W
     while word < 128:
@@ -530,7 +530,7 @@ def argon2_finish(
     while word + W <= 128:
         final_block.store(
             word,
-            memory.load[width=W](last * 128 + word),
+            memory.unsafe_load[width=W](last * 128 + word),
         )
         word += W
     while word < 128:
@@ -542,8 +542,8 @@ def argon2_finish(
         while word + W <= 128:
             final_block.store(
                 word,
-                final_block.load[width=W](word)
-                ^ memory.load[width=W](block + word),
+                final_block.unsafe_load[width=W](word)
+                ^ memory.unsafe_load[width=W](block + word),
             )
             word += W
         while word < 128:
