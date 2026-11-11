@@ -114,11 +114,42 @@ The mandatory memory wipe is a pure bandwidth pass and always runs on the
 calling thread. Each active lane gets independent scratch storage; serial calls
 reuse one scratch arena.
 
-No GPU path is included. Argon2's hot block filler is intentionally
-memory-hard, uses data-dependent random references, and has well under two
-integer operations per byte moved from the matrix. Slice barriers and
-host/device setup would add overhead without enough arithmetic intensity to
-amortize it, so CPU remains the only execution device.
+CPU only: memory-bound.
+
+No GPU path is included, because no kernel in this port clears the GPU
+selection gate in [`bench/analysis.md`](bench/analysis.md), which requires
+roughly 2 integer flops per byte of matrix traffic:
+
+| kernel | sizes | flops/byte | bound |
+|---|---|---:|---|
+| `fill_block` (via `fill_segment` / `argon2_fill_lane`) | 4 MiB, 16 MiB, 64 MiB | 0.94 | memory |
+| `argon2_finish` (secure memory wipe) | 4 MiB, 16 MiB, 64 MiB | 0.41 | memory |
+| `argon2_begin` (BLAKE2b + `hprime`) | any | 12.5, but 8 KiB of input | compute, negligible (0.17 ms at 64 MiB) |
+
+`fill_block` is the hot kernel at 91.8% of the 64 MiB four-lane call and is
+memory-bound by design: Argon2's block filler XORs and permutes a 1 KiB block
+with two other blocks through data-dependent random references, so it moves
+far more bytes than it computes. Copying the matrix to the device, crossing
+slice barriers, and copying back would add transfer cost on top of the
+bottleneck rather than amortize it. The only kernel above the threshold,
+`argon2_begin`, works on 8 KiB and would lose to launch overhead. The CPU path
+is therefore the only execution device, and there are no GPU tests to skip on
+CPU-only hosts. The shared GPU gate was checked and not reached:
+`nvidia-smi --query-gpu=memory.free` reported 6676 MiB free, but the flop gate
+fails first.
+
+Baseline numbers for this port, from [`bench/analysis.md`](bench/analysis.md)
+(Intel Xeon E5-2697 v4 @ 2.30 GHz, same host as this phase's checks). They are
+unchanged because this phase produced no code change:
+
+| case | before | after |
+|---|---:|---:|
+| Argon2id, 64 MiB, t=3, p=4 | 191.28 ms | 191.28 ms |
+| Argon2id, 16 MiB, t=2, p=1 | 23.71 ms | 23.71 ms |
+| Argon2i, 4 MiB, t=3, p=1 | 8.73 ms | 8.73 ms |
+
+The README benchmark table above reports a slower run of the same port
+(311.77 ms / 30.79 ms / 11.51 ms) and is left as measured.
 
 ## How it works
 
