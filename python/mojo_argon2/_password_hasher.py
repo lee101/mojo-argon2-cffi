@@ -18,6 +18,30 @@ DEFAULT_MEMORY_COST = _DEFAULT.memory_cost
 DEFAULT_PARALLELISM = _DEFAULT.parallelism
 
 
+def _ensure_bytes(s: bytes | str, encoding: str) -> bytes:
+    # same contract as upstream's _password_hasher._ensure_bytes
+    if isinstance(s, bytes):
+        return s
+    return s.encode(encoding)
+
+
+def _check_types(**kw) -> str | None:
+    # upstream _utils._check_types: collects every violation into one message
+    errors = []
+    for name, (value, expected) in kw.items():
+        if not isinstance(value, expected):
+            if isinstance(expected, tuple):
+                types = ", or ".join(t.__name__ for t in expected)
+            else:
+                types = expected.__name__
+            errors.append(f"'{name}' must be a {types} (got {type(value).__name__})")
+
+    if errors != []:
+        return ", ".join(errors) + "."
+
+    return None
+
+
 class PasswordHasher:
     __slots__ = ("_parameters", "encoding")
 
@@ -31,22 +55,18 @@ class PasswordHasher:
         encoding: str = "utf-8",
         type: Type = Type.ID,
     ):
-        values = {
-            "time_cost": time_cost,
-            "memory_cost": memory_cost,
-            "parallelism": parallelism,
-            "hash_len": hash_len,
-            "salt_len": salt_len,
-        }
-        for name, value in values.items():
-            if not isinstance(value, int):
-                raise TypeError(f"'{name}' must be an int")
-        if not isinstance(encoding, str):
-            raise TypeError("'encoding' must be a str")
-        if not isinstance(type, Type):
-            raise TypeError("'type' must be a Type")
-        if salt_len < 8:
-            raise ValueError("salt_len must be at least 8")
+        # upstream validates by isinstance only here: bool passes, float does not.
+        e = _check_types(
+            time_cost=(time_cost, int),
+            memory_cost=(memory_cost, int),
+            parallelism=(parallelism, int),
+            hash_len=(hash_len, int),
+            salt_len=(salt_len, int),
+            encoding=(encoding, str),
+            type=(type, Type),
+        )
+        if e:
+            raise TypeError(e)
         self._parameters = Parameters(
             type, 19, salt_len, hash_len, time_cost, memory_cost, parallelism
         )
@@ -88,16 +108,10 @@ class PasswordHasher:
         return self._parameters.type
 
     def hash(self, password: str | bytes, *, salt: bytes | None = None) -> str:
-        password_bytes = (
-            password if isinstance(password, bytes) else password.encode(self.encoding)
-        )
-        if not isinstance(password_bytes, bytes):
-            raise TypeError("password must be str or bytes")
-        if salt is not None and not isinstance(salt, bytes):
-            raise TypeError("salt must be bytes")
+        # upstream uses `salt or os.urandom(...)`, so b"" also gets a random salt
         return hash_secret(
-            password_bytes,
-            salt if salt is not None else os.urandom(self.salt_len),
+            _ensure_bytes(password, self.encoding),
+            salt or os.urandom(self.salt_len),
             self.time_cost,
             self.memory_cost,
             self.parallelism,
@@ -106,12 +120,8 @@ class PasswordHasher:
         ).decode("ascii")
 
     def verify(self, hash: str | bytes, password: str | bytes) -> bool:
-        encoded = hash.encode("ascii") if isinstance(hash, str) else hash
-        if not isinstance(encoded, bytes):
-            raise TypeError("hash must be str or bytes")
-        secret = password.encode(self.encoding) if isinstance(password, str) else password
-        if not isinstance(secret, bytes):
-            raise TypeError("password must be str or bytes")
+        encoded = _ensure_bytes(hash, "ascii")
+        secret = _ensure_bytes(password, self.encoding)
         headers = {
             b"$argon2d$": Type.D,
             b"$argon2i$": Type.I,
@@ -119,7 +129,7 @@ class PasswordHasher:
         }
         try:
             type_value = headers[encoded[:9]]
-        except KeyError:
+        except LookupError:
             raise InvalidHashError from None
         return verify_secret(encoded, secret, type_value)
 

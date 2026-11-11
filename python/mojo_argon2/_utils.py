@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-
 from dataclasses import dataclass
 
 from .exceptions import InvalidHashError
@@ -24,11 +22,19 @@ class Parameters:
 _NAME_TO_TYPE = {"argon2id": Type.ID, "argon2i": Type.I, "argon2d": Type.D}
 
 
-def _decoded_len(value: str) -> int:
-    try:
-        return len(base64.b64decode(value + "=" * (-len(value) % 4), validate=True))
-    except Exception as exc:
-        raise InvalidHashError from exc
+def _decoded_len(length: int) -> int:
+    # verbatim port of upstream's _utils._decoded_str_len: encoded length only,
+    # the characters themselves are never decoded or validated.
+    rem = length % 4
+
+    if rem == 3:
+        last_group_len = 2
+    elif rem == 2:
+        last_group_len = 1
+    else:
+        last_group_len = 0
+
+    return length // 4 * 3 + last_group_len
 
 
 def extract_parameters(hash: str) -> Parameters:
@@ -48,8 +54,8 @@ def extract_parameters(hash: str) -> Parameters:
         return Parameters(
             type=type_value,
             version=int(values["v"]),
-            salt_len=_decoded_len(parts[4]),
-            hash_len=_decoded_len(parts[5]),
+            salt_len=_decoded_len(len(parts[4])),
+            hash_len=_decoded_len(len(parts[5])),
             time_cost=int(values["t"]),
             memory_cost=int(values["m"]),
             parallelism=int(values["p"]),

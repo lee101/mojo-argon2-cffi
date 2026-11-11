@@ -1,0 +1,92 @@
+"""Frozen argon2-cffi outputs used as an independent parity reference.
+
+Generated with argon2-cffi 25.1.0 against
+libargon2 (the C reference), never with mojo_argon2.  These let the suite
+prove parity even where the upstream package is not importable.
+"""
+
+UPSTREAM_VERSION = '25.1.0'
+
+RAW_VECTORS = [
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 4, 0, 16, 'a229cadb'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 32, 0, 16, 'faa687b7aa5db546f88fe8c3d27d64e6a7ecbf0b4b281a398372ebc0824e0d49'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 65, 0, 16, 'f0361bfab93bb92a24455891a7d6d8d85b6a32ba40ad44a52e871db123c358b0c7fe744216f733fecf091b240fb47f810f94e86e7a8be1e614020dcff2a6a09eb2'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 4, 0, 18, '64f9d44f'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 32, 0, 18, '731b81b6b18e822fe0c96adf791ec9b321161705de3df290bd8c9448a52a3bef'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 65, 0, 18, '8624bd312900fad4e84e4d8583150073a645bbaa5f63f0a5cb28b4aab08f593d71f41bb4f264ab55783c78050b5f107b8b21c15e43740099dde009e5d6c428a142'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 4, 0, 19, '52dd5353'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 32, 0, 19, 'ec98779073ba402ce7aafa49b67fa260219db13df7cbe61b744e2e3b0bebdaea'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 65, 0, 19, '0c646e8c1e1d4aa91687e6c0185b448af25948275e261e2b9cc36645e9fc97fd897971e28000961838338a6158a6275a1923f9e51465324ea2242d71efc2585c6f'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 4, 0, 21, 'cdf70bb3'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 32, 0, 21, '2f2399f40c1515e63cd247a3cd2845b2d369ad3aa0bba09243dc3b14f8d4abc4'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 65, 0, 21, '3c6fa9f2f8a2f7e400ed520e5e22e68c2d9bd9dd5bb4a5b3625ab64c11996c515757e789d8c2671835d1de171d798fe0dfd1b5d97e0f600a66148fb696ea55c6cd'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 4, 1, 16, '6e28a96e'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 32, 1, 16, '88c8453e0c98e1ba6510dcd0b29d9e4cc05a98239dcf9b2f28de0dfdc6398f79'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 65, 1, 16, '2f46aed72ac7b9ed2664d1aff968f6ea4793a30426c1ef2d77c4475a92f14a8618c13b8f39a48ecb872c5b4c14d2bba37509ad5bf530c163095a63f6837a2a7a96'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 4, 1, 18, 'a123e50f'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 32, 1, 18, 'e7540d45b2f9af3b8b9f56b4745ec9c3f2451cc4e4e090f463148df68b5caba8'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 65, 1, 18, 'e01ac90f623b39d63724f0f87316e8c48a54e4088dfe3f513b5c38354369ad0c6e4ce991a07803dfe450267b80d11a4a42f30c83796d1eb76f28e7d9adce0ff97a'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 4, 1, 19, 'c4a73461'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 32, 1, 19, 'fe60316383335d6ec4b3531379e20f60b26a93524f9420d678029500d6578e64'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 65, 1, 19, 'ecafd9e2c98f2cbb6d2300dc20f44d804db7b5adbe7c2252a63b16fa5eb75dae397f7a49beb98fba403aa6ef1e16ae9aad5eac98a90096402c4795567eaa6ff8a4'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 4, 1, 21, 'aa2c7a39'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 32, 1, 21, '90a4ab0bc2de54081ea633a572d800c0e2011cc74526714689a1ef310404cc54'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 65, 1, 21, '94fc5e526102fefcd5178eb6c1ad23851998f8be218543c359b9340b8605b9f43840786f9e9c6224d48164f2f40e7aaa23009a06f6ad838fc7368e08a0b99298ff'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 4, 2, 16, '5a17f266'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 32, 2, 16, '6954a8508ecd69a04045e1e01823665ba71e36d02da482869853c9b30e8c9a96'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 65, 2, 16, '8e2eacecb16127451212fbce525d6822557210ac72a870275f0cdce49c76da8e3099bd1e6c4172cad236ff792f2a4eb337500c1d1b6c64fe2c1c0e21d92066ede4'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 4, 2, 18, '67456626'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 32, 2, 18, 'aa90c200cd64b9c6f73d6af3d1482f6224afce5dcd9dff540af33897fa78bd59'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 65, 2, 18, '9ea4335f3ffa1988f1cc526270002ccde78836831b09e6ac7fc2e171b630034d6d9ae7fe82c7f166bb64fa7bd6084752a2fcb95e7a5924a56359a03b5946f300b8'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 4, 2, 19, 'dd9c0d8b'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 32, 2, 19, '64a1dd8f645819d9789cf001277d523ef4f7eaffe320ac1eb95f3d5c756698ac'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 65, 2, 19, '956c81557e36885d93a4028acec283ede9df65678cca73cb9b90bbc6d2bf251a18e0197e726a520900dc824204fb3260ced7394c80ed9fbcf6a85b4097f21bce62'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 4, 2, 21, 'd3774f02'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 32, 2, 21, '364ba973b4a6c6c38912a131e1a64b2920eea502dc1a44c7bd491985e57d9342'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 65, 2, 21, '5ee214e59fd658b2295e73591ce7c39c9b5331d21bf9dc59407a8fc93e4b05c6dfcf6155389ddc848222cefff5ec29a19c7245a0108a04f4d8207b4281edd25b43'),
+]
+
+ENCODED_VECTORS = [
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 24, 0, b'$argon2d$v=19$m=32,t=2,p=2$MDEyMzQ1Njc4OWFiY2RlZg$Gc2A3YzW1gc0ZzoW2hm8ynhVWDRYUZO4'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 24, 1, b'$argon2i$v=19$m=32,t=2,p=2$MDEyMzQ1Njc4OWFiY2RlZg$AmpMKPIuJjIHHioYhgEyOgI0ZH9q/Dyy'),
+    (b'hash_secret_raw reference', b'0123456789abcdef', 2, 32, 2, 24, 2, b'$argon2id$v=19$m=32,t=2,p=2$MDEyMzQ1Njc4OWFiY2RlZg$yJEOyLn5zPThyRcwxR/mRd1PtGpIy58O'),
+]
+
+ERROR_STRINGS = {
+    -35: 'The password does not match the supplied hash',
+    -34: 'Some of encoded parameters are too long or too short',
+    -33: 'Threading failure',
+    -32: 'Decoding failed',
+    -31: 'Encoding failed',
+    -30: 'Missing arguments',
+    -29: 'Too many threads',
+    -28: 'Not enough threads',
+    -27: 'Output pointer mismatch',
+    -26: 'There is no such version of Argon2',
+    -25: 'Argon2_Context context is NULL',
+    -24: 'The allocate memory callback is NULL',
+    -23: 'The free memory callback is NULL',
+    -22: 'Memory allocation error',
+    -21: 'Associated data pointer is NULL, but ad length is not 0',
+    -20: 'Secret pointer is NULL, but secret length is not 0',
+    -19: 'Salt pointer is NULL, but salt length is not 0',
+    -18: 'Password pointer is NULL, but password length is not 0',
+    -17: 'Too many lanes',
+    -16: 'Too few lanes',
+    -15: 'Memory cost is too large',
+    -14: 'Memory cost is too small',
+    -13: 'Time cost is too large',
+    -12: 'Time cost is too small',
+    -11: 'Secret is too long',
+    -10: 'Secret is too short',
+    -9: 'Associated data is too long',
+    -8: 'Associated data is too short',
+    -7: 'Salt is too long',
+    -6: 'Salt is too short',
+    -5: 'Password is too long',
+    -4: 'Password is too short',
+    -3: 'Output is too long',
+    -2: 'Output is too short',
+    -1: 'Output pointer is NULL',
+    0: 'OK',
+}

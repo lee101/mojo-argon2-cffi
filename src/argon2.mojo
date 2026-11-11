@@ -668,7 +668,10 @@ def mojo_argon2_hash(
         or hash_len > 0xFFFFFFFF
         or type_id < 0
         or type_id > 2
-        or (version != 16 and version != 19)
+        # upstream argon2d_ctx only special-cases version 16; any other value
+        # is used verbatim, so no version range is rejected here.
+        or version < 0
+        or version > 0xFFFFFFFF
         or (use_threads != 0 and use_threads != 1)
     ):
         return -1
@@ -775,7 +778,8 @@ def mojo_argon2_fill(
         or slice_number > 3
         or type_id < 0
         or type_id > 2
-        or (version != 16 and version != 19)
+        or version < 0
+        or version > 0xFFFFFFFF
     ):
         return -1
     argon2_fill_lane(
